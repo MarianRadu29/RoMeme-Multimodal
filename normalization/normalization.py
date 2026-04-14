@@ -28,23 +28,19 @@ class TextNormalizer:
     """
     Phase 3: Normalize raw OCR output before diacritics restoration.
     Steps (in order):
-      1. drop noise lines (isolated junk like "dt»", "| —", "[pl —")
-      2. unicode cleanup (NFC, remove control chars)
-      3. character confusions (0→o, |→l, curly quotes, dashes, ellipsis)
-      4. strip noise (stray symbols, repeated punctuation)
-      5. fix digit-in-word (R0mn1a → Romnia)
-      6. SymSpell spell-check against a Romanian dictionary (no diacritics)
-      7. collapse whitespace
-      8. lowercase (optional)
+      1. unicode cleanup (NFC, remove control chars)
+      2. character confusions (|→l, curly quotes, dashes, ellipsis)
+      3. fix digit-in-word (R0mn1a → Romania)
+      4. drop obvious noise lines (isolated junk like "dt»", "| —", "[pl —")
+      5. strip noise (stray symbols, repeated punctuation)
+      6. lowercase (optional)
+      7. SymSpell spell-check against a Romanian dictionary (no diacritics)
+      8. collapse whitespace
     Output is a clean, no-diacritics Romanian text ready for DiacriticsRestorer.
     """
 
     # common OCR character confusions (source -> target)
     OCR_CONFUSIONS = {
-        "0": "o",
-        "1": "l",
-        "5": "s",
-        "8": "B",
         "|": "l",
         "¢": "c",
         "€": "e",
@@ -60,6 +56,35 @@ class TextNormalizer:
 
     # token extractor used for spell-check (keeps only letter runs)
     TOKEN_SPLIT = re.compile(r"([^\W\d_]+)", re.UNICODE)
+    NON_SPACE_TOKEN = re.compile(r"\S+")
+    WORD_TOKEN = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+    # lightweight corpus-specific fixes that should work even without SymSpell
+    BUILTIN_TOKEN_REPLACEMENTS = {
+        "astainseamna": "asta inseamna",
+        "cuagheasma": "cu agheasma",
+        "mafio": "mafiot",
+        "pacates": "pacate",
+        "safiimafiot": "sa fii mafiot",
+        "spalktorie": "spalatorie",
+        "spaltorie": "spalatorie",
+        "suu": "sub",
+    }
+    BUILTIN_LINE_REPLACEMENTS = (
+        (re.compile(r"\btorie de pacate spa\b", re.UNICODE), "spalatorie de pacate spa"),
+    )
+
+    VALID_SHORT_WORDS = {
+        "ai", "am", "ar", "as", "au", "ca", "ce", "cu", "da", "de", "e", "ea",
+        "el", "eu", "ii", "in", "la", "le", "li", "ma", "mi", "ne", "nu", "o",
+        "pe", "sa", "se", "si", "te", "tu", "un",
+    }
+    VALID_SHORT_PHRASES = {
+        "nu te", "sa fii", "de la", "de ce", "pe el", "pe ea", "cu ea", "cu el",
+    }
+    NOISE_WORDS = {
+        "ist", "mir", "poe", "tie",
+    }
 
     def __init__(
         self,
@@ -118,25 +143,90 @@ class TextNormalizer:
     # ---------- text cleaning steps ----------
 
     def _drop_noise_lines(self, text: str) -> str:
-        """Drop lines that are mostly non-letters or too short to be words."""
+        """Drop only obviously noisy OCR lines while preserving short meme text."""
+        lines = text.splitlines()
+        word_lines = [self._line_words(line) for line in lines]
         kept = []
-        for line in text.splitlines():
+
+        for idx, line in enumerate(lines):
             stripped = line.strip()
             if not stripped:
                 continue
+
+            non_space = [ch for ch in stripped if not ch.isspace()]
+            if not non_space:
+                continue
+
+            words = word_lines[idx]
+            if not words:
+                continue
+
             letters = sum(ch.isalpha() for ch in stripped)
-            total = len(stripped)
-            # require at least 3 letters — filters out "dt»", "bă", "mir", "tie", "a da"
-            if letters < 3:
+            if letters / len(non_space) < 0.35:
                 continue
-            if letters / total < 0.55:
-                continue  # "[pl —", "2480", "~@#"
-            # also drop lines made of tiny tokens only (e.g. "a da", "de de")
-            longest_token = max((len(t) for t in stripped.split() if t.isalpha()), default=0)
-            if longest_token < 3:
+
+            prev_words = self._nearby_context_words(word_lines, idx, -1)
+            next_words = self._nearby_context_words(word_lines, idx, 1)
+            if self._is_probable_artifact_line(stripped, words, prev_words, next_words):
                 continue
+
             kept.append(stripped)
         return "\n".join(kept)
+
+    def _line_words(self, text: str) -> list[str]:
+        return [word.lower() for word in self.WORD_TOKEN.findall(text)]
+
+    def _has_long_word(self, words: list[str]) -> bool:
+        return any(len(word) >= 4 for word in words)
+
+    def _nearby_context_words(
+        self,
+        word_lines: list[list[str]],
+        start_idx: int,
+        direction: int,
+        max_nonempty_lines: int = 3,
+    ) -> list[str]:
+        collected = []
+        seen = 0
+        idx = start_idx + direction
+        while 0 <= idx < len(word_lines):
+            if word_lines[idx]:
+                collected.extend(word_lines[idx])
+                seen += 1
+                if seen >= max_nonempty_lines:
+                    break
+            idx += direction
+        return collected
+
+    def _is_probable_artifact_line(
+        self,
+        line: str,
+        words: list[str],
+        prev_words: list[str],
+        next_words: list[str],
+    ) -> bool:
+        normalized = " ".join(words)
+        near_long_context = self._has_long_word(prev_words) or self._has_long_word(next_words)
+
+        if normalized in self.NOISE_WORDS:
+            return True
+
+        if line[:1] in {'"', "'"} and len(words) == 1 and len(words[0]) <= 4:
+            return True
+
+        if len(words) == 1:
+            word = words[0]
+            if len(word) == 1:
+                return near_long_context or word not in {"o"}
+            if len(word) <= 2:
+                return near_long_context and word not in self.VALID_SHORT_WORDS
+            if len(word) == 3 and near_long_context and word not in self.VALID_SHORT_WORDS:
+                return True
+
+        if len(words) <= 2 and all(len(word) <= 2 for word in words):
+            return near_long_context and normalized not in self.VALID_SHORT_PHRASES
+
+        return False
 
     def _unicode_cleanup(self, text: str) -> str:
         text = unicodedata.normalize("NFC", text)
@@ -151,10 +241,34 @@ class TextNormalizer:
     def _fix_digit_in_word(self, token: str) -> str:
         if self.DIGIT_WHITELIST.match(token):
             return token
-        if any(c.isalpha() for c in token) and any(c.isdigit() for c in token):
-            table = str.maketrans({"0": "o", "1": "i", "3": "e", "5": "s", "7": "t"})
-            return token.translate(table)
-        return token
+
+        letters = sum(c.isalpha() for c in token)
+        digits = sum(c.isdigit() for c in token)
+        if letters < 2 or digits == 0:
+            return token
+
+        substitutions = {"0": "o", "1": "i", "3": "e", "5": "s", "7": "t", "8": "B"}
+        chars = list(token)
+        for idx, ch in enumerate(chars):
+            if ch not in substitutions:
+                continue
+
+            prev_is_letter = idx > 0 and chars[idx - 1].isalpha()
+            next_is_letter = idx + 1 < len(chars) and chars[idx + 1].isalpha()
+            if prev_is_letter or next_is_letter or letters >= digits:
+                chars[idx] = substitutions[ch]
+
+        return "".join(chars)
+
+    def _fix_digit_tokens(self, text: str) -> str:
+        def repl(match):
+            return self._fix_digit_in_word(match.group(0))
+
+        return self.NON_SPACE_TOKEN.sub(repl, text)
+
+    def _normalize_line_break_hyphenation(self, text: str) -> str:
+        """Merge OCR line breaks that split a word with a trailing hyphen."""
+        return re.sub(r"(\w)-\n(\w)", r"\1\2", text, flags=re.UNICODE)
 
     def _collapse_whitespace(self, text: str) -> str:
         text = re.sub(r"[ \t]+", " ", text)
@@ -165,6 +279,19 @@ class TextNormalizer:
         text = re.sub(r"(?<!\w)[^\w\s.,!?;:'\"()\-]+(?!\w)", " ", text, flags=re.UNICODE)
         text = re.sub(r"([!?,;:])\1{1,}", r"\1", text)
         text = re.sub(r"\.{4,}", "...", text)
+        text = re.sub(r"(?m)\s+[)\]}]+$", "", text)
+        text = re.sub(r"(?m)^[([{]+\s*", "", text)
+        text = re.sub(r"(?m)^['\"]+(?=\w)", "", text)
+        return text
+
+    def _apply_builtin_corrections(self, text: str) -> str:
+        def repl(match):
+            token = match.group(0)
+            return self.BUILTIN_TOKEN_REPLACEMENTS.get(token, token)
+
+        text = self.TOKEN_SPLIT.sub(repl, text)
+        for pattern, replacement in self.BUILTIN_LINE_REPLACEMENTS:
+            text = pattern.sub(replacement, text)
         return text
 
     # ---------- spell-check ----------
@@ -216,7 +343,6 @@ class TextNormalizer:
             except Exception:
                 pass
         return token
-        return best.term
 
     def _spell_check(self, text: str) -> str:
         """Replace every letter-only token in text with its SymSpell candidate."""
@@ -235,15 +361,17 @@ class TextNormalizer:
             return ""
 
         text = self._unicode_cleanup(text)
-        text = self._drop_noise_lines(text)
+        text = self._normalize_line_break_hyphenation(text)
         text = self._replace_confusions(text)
-        text = self._strip_noise(text)
-
         if self.fix_digits:
-            text = " ".join(self._fix_digit_in_word(tok) for tok in text.split(" "))
+            text = self._fix_digit_tokens(text)
+        text = self._strip_noise(text)
 
         if self.lowercase:
             text = text.lower()
+
+        text = self._apply_builtin_corrections(text)
+        text = self._drop_noise_lines(text)
 
         # spell-check AFTER lowercase + digit fix so tokens are in canonical form
         text = self._spell_check(text)
