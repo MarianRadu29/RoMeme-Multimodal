@@ -1,0 +1,4 @@
+pe cine il alegi?
+comm
+cu
+comm cu :x

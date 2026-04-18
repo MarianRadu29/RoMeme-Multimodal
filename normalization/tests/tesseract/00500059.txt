@@ -1,0 +1,2 @@
+eu: am luat salariul
+masina:

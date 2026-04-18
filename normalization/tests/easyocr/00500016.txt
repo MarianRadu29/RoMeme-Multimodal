@@ -1,0 +1,11 @@
+profesorii:
+greva,
+orele
+nu
+se
+elevii
+care
+nu
+sunt
+terminal:
+rrmemes

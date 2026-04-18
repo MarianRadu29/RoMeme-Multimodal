@@ -1,0 +1,4 @@
+eu: am luat salariul
+masina:
+@ghost
+salariul nostru

@@ -1,0 +1,11 @@
+Eu: Am luat salariul
+
+Maşina:
+
+A
+
+a 37
+
+>,
+
+= mc

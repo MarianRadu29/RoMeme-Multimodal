@@ -1,0 +1,5 @@
+zi de nastere in anii 2000:
+db
+pegas
+nat aaa
+cce

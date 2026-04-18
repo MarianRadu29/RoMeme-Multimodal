@@ -1,0 +1,2 @@
+bucuresti: "e mai mare chiria că platesti zona"
+zona:

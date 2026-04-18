@@ -63,8 +63,8 @@ def process_folder(folder_path):
         image_path = os.path.join(folder_path, filename)
         base_name = os.path.splitext(filename)[0]
 
-        tess_file_path = os.path.join("./tests/tesseract", f"{base_name}_tesseract.txt")
-        easy_file_path = os.path.join("./tests/easyocr", f"{base_name}_easy_ocr.txt")
+        tess_file_path = os.path.join("./tests/tesseract", f"{base_name}.txt")
+        easy_file_path = os.path.join("./tests/easyocr", f"{base_name}.txt")
 
         # sarim peste procesare daca ambele fisiere exista deja
         if os.path.exists(tess_file_path) and os.path.exists(easy_file_path):
