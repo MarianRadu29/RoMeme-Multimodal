@@ -25,19 +25,6 @@ def fold_diacritics(text: str) -> str:
 
 
 class TextNormalizer:
-    """
-    Phase 3: Normalize raw OCR output before diacritics restoration.
-    Steps (in order):
-      1. unicode cleanup (NFC, remove control chars)
-      2. character confusions (|→l, curly quotes, dashes, ellipsis)
-      3. fix digit-in-word (R0mn1a → Romania)
-      4. drop obvious noise lines (isolated junk like "dt»", "| —", "[pl —")
-      5. strip noise (stray symbols, repeated punctuation)
-      6. lowercase (optional)
-      7. SymSpell spell-check against a Romanian dictionary (no diacritics)
-      8. collapse whitespace
-    Output is a clean, no-diacritics Romanian text ready for DiacriticsRestorer.
-    """
 
     # common OCR character confusions (source -> target)
     OCR_CONFUSIONS = {
@@ -59,21 +46,6 @@ class TextNormalizer:
     NON_SPACE_TOKEN = re.compile(r"\S+")
     WORD_TOKEN = re.compile(r"[^\W\d_]+", re.UNICODE)
 
-    # lightweight corpus-specific fixes that should work even without SymSpell
-    BUILTIN_TOKEN_REPLACEMENTS = {
-        "astainseamna": "asta inseamna",
-        "cuagheasma": "cu agheasma",
-        "mafio": "mafiot",
-        "pacates": "pacate",
-        "safiimafiot": "sa fii mafiot",
-        "spalktorie": "spalatorie",
-        "spaltorie": "spalatorie",
-        "suu": "sub",
-    }
-    BUILTIN_LINE_REPLACEMENTS = (
-        (re.compile(r"\btorie de pacate spa\b", re.UNICODE), "spalatorie de pacate spa"),
-    )
-
     VALID_SHORT_WORDS = {
         "ai", "am", "ar", "as", "au", "ca", "ce", "cu", "da", "de", "e", "ea",
         "el", "eu", "ii", "in", "la", "le", "li", "ma", "mi", "ne", "nu", "o",
@@ -82,9 +54,6 @@ class TextNormalizer:
     VALID_SHORT_PHRASES = {
         "nu te", "sa fii", "de la", "de ce", "pe el", "pe ea", "cu ea", "cu el",
     }
-    NOISE_WORDS = {
-        "ist", "mir", "poe", "tie",
-    }
 
     def __init__(
         self,
@@ -92,6 +61,8 @@ class TextNormalizer:
         fix_digits: bool = True,
         spell_check: bool = True,
         dictionary_path: str = None,
+        fallback_dictionary_path: str = None,
+        valid_words_path: str = None,
         max_edit_distance: int = 2,
         min_token_len_for_correction: int = 5,
     ):
@@ -102,43 +73,62 @@ class TextNormalizer:
         self.min_token_len_for_correction = min_token_len_for_correction
 
         self.sym_spell = None
+        self.sym_spell_fallback = None
+        self.valid_words = None
         if self.spell_check:
-            self._load_symspell(dictionary_path)
+            self._load_symspell(dictionary_path, fallback_dictionary_path)
+            self._load_valid_words(valid_words_path)
+
+    def _load_valid_words(self, path: str):
+        if path is None:
+            here = os.path.dirname(os.path.abspath(__file__))
+            path = os.path.join(here, "ro_valid_words.txt")
+        if not os.path.exists(path):
+            return
+        with open(path, encoding="utf-8") as f:
+            self.valid_words = {line.strip() for line in f if line.strip()}
+        print(f"[normalization] valid-words set loaded ({len(self.valid_words)} terms).")
 
     # ---------- SymSpell loading ----------
 
-    def _load_symspell(self, dictionary_path: str):
+    def _load_one_dictionary(self, path: str, label: str):
+        if not os.path.exists(path):
+            print(f"[normalization] {label} dictionary not found at {path}.")
+            return None
+
+        sym = SymSpell(
+            max_dictionary_edit_distance=self.max_edit_distance,
+            prefix_length=7,
+        )
+        loaded = sym.load_dictionary(path, term_index=0, count_index=1, encoding="utf-8")
+        if not loaded:
+            print(f"[normalization] failed to load {label} dictionary {path}.")
+            return None
+
+        print(f"[normalization] {label} dictionary loaded ({len(sym.words)} terms).")
+        return sym
+
+    def _load_symspell(self, dictionary_path: str, fallback_dictionary_path: str):
         if not _SYMSPELL_AVAILABLE:
             print("[normalization] symspellpy not installed; spell-check disabled.")
             self.spell_check = False
             return
 
+        here = os.path.dirname(os.path.abspath(__file__))
         if dictionary_path is None:
-            here = os.path.dirname(os.path.abspath(__file__))
             dictionary_path = os.path.join(here, "ro_50k_no_diacritics.txt")
+        if fallback_dictionary_path is None:
+            fallback_dictionary_path = os.path.join(here, "ro_full_no_diacritics.txt")
 
-        if not os.path.exists(dictionary_path):
-            print(f"[normalization] dictionary not found at {dictionary_path}; "
-                  f"spell-check disabled. See README for how to build it.")
+        self.sym_spell = self._load_one_dictionary(dictionary_path, "primary")
+        if self.sym_spell is None:
             self.spell_check = False
             return
 
-        self.sym_spell = SymSpell(
-            max_dictionary_edit_distance=self.max_edit_distance,
-            prefix_length=7,
-        )
-        loaded = self.sym_spell.load_dictionary(
-            dictionary_path, term_index=0, count_index=1, encoding="utf-8"
-        )
-        if not loaded:
-            print(f"[normalization] failed to load dictionary {dictionary_path}; "
-                  f"spell-check disabled.")
-            self.spell_check = False
-            self.sym_spell = None
-            return
-
-        print(f"[normalization] SymSpell dictionary loaded "
-              f"({len(self.sym_spell.words)} terms).")
+        if os.path.exists(fallback_dictionary_path):
+            self.sym_spell_fallback = self._load_one_dictionary(
+                fallback_dictionary_path, "fallback"
+            )
 
     # ---------- text cleaning steps ----------
 
@@ -207,9 +197,6 @@ class TextNormalizer:
     ) -> bool:
         normalized = " ".join(words)
         near_long_context = self._has_long_word(prev_words) or self._has_long_word(next_words)
-
-        if normalized in self.NOISE_WORDS:
-            return True
 
         if line[:1] in {'"', "'"} and len(words) == 1 and len(words[0]) <= 4:
             return True
@@ -284,58 +271,80 @@ class TextNormalizer:
         text = re.sub(r"(?m)^['\"]+(?=\w)", "", text)
         return text
 
-    def _apply_builtin_corrections(self, text: str) -> str:
-        def repl(match):
-            token = match.group(0)
-            return self.BUILTIN_TOKEN_REPLACEMENTS.get(token, token)
-
-        text = self.TOKEN_SPLIT.sub(repl, text)
-        for pattern, replacement in self.BUILTIN_LINE_REPLACEMENTS:
-            text = pattern.sub(replacement, text)
-        return text
-
     # ---------- spell-check ----------
 
-    def _correct_token(self, token: str) -> str:
-        """
-        Look up a single lowercase, diacritic-folded token in SymSpell.
-        For long tokens that look like glued words, try word segmentation.
-        Returns the best candidate if found; otherwise the original token.
-        """
-        if self.sym_spell is None:
-            return token
-        if len(token) < self.min_token_len_for_correction:
-            return token  # don't risk correcting short tokens (false positives)
-
-        query = fold_diacritics(token.lower())
-        suggestions = self.sym_spell.lookup(
+    def _lookup_with_rules(self, sym, token: str, query: str):
+        """Run SymSpell lookup and apply length/distance rules. Returns term or None."""
+        suggestions = sym.lookup(
             query,
             Verbosity.TOP,
             max_edit_distance=self.max_edit_distance,
             transfer_casing=False,
         )
-        if suggestions:
-            best = suggestions[0]
-            # exact match — accept immediately
+        if not suggestions:
+            return None
+        best = suggestions[0]
+        if best.distance == 0:
+            return best.term
+        if len(token) <= 5:
+            return token  # short tokens: only exact matches (prevents mafio→mario)
+        if best.distance >= 2 and len(token) <= 7:
+            return token  # medium tokens: only edit-distance-1 corrections
+        return best.term
+
+    def _correct_token(self, token: str) -> str:
+        if self.sym_spell is None:
+            return token
+        if len(token) < self.min_token_len_for_correction:
+            return token
+
+        query = fold_diacritics(token.lower())
+
+        # hunspell-validated: token is orthographically valid → keep as-is
+        if self.valid_words is not None and query in self.valid_words:
+            return token
+
+        # hunspell said token is NOT valid → relax the short-token rule,
+        # since we know a correction is warranted
+        known_invalid = self.valid_words is not None
+
+        primary_suggestions = self.sym_spell.lookup(
+            query,
+            Verbosity.TOP,
+            max_edit_distance=self.max_edit_distance,
+            transfer_casing=False,
+        )
+        if primary_suggestions:
+            best = primary_suggestions[0]
             if best.distance == 0:
                 return best.term
-            # short tokens: only accept exact matches (prevents mafio→mario)
-            if len(token) <= 5:
-                return token
-            # medium tokens: only edit-distance-1 corrections
-            if best.distance >= 2 and len(token) <= 7:
-                return token
-            return best.term
+            if known_invalid:
+                return best.term  # trust correction, token is confirmed invalid
+            return self._lookup_with_rules(self.sym_spell, token, query)
 
-        # no direct match — if the token is long, try word segmentation
-        # (handles OCR outputs like "safiimafiot" -> "sa fii mafiot")
+        # primary had nothing — try fallback dictionary (covers rare words)
+        if self.sym_spell_fallback is not None:
+            fb_suggestions = self.sym_spell_fallback.lookup(
+                query, Verbosity.TOP,
+                max_edit_distance=self.max_edit_distance,
+                transfer_casing=False,
+            )
+            if fb_suggestions:
+                best = fb_suggestions[0]
+                if best.distance == 0:
+                    return best.term
+                if known_invalid:
+                    return best.term
+                rule_result = self._lookup_with_rules(self.sym_spell_fallback, token, query)
+                if rule_result is not None:
+                    return rule_result
+
+        # still nothing — if the token is long, try word segmentation on primary
         if len(query) >= 8:
             try:
                 seg = self.sym_spell.word_segmentation(query, max_edit_distance=0)
                 if seg and seg.corrected_string and " " in seg.corrected_string:
                     pieces = seg.corrected_string.split()
-                    # reject segmentation that produced too many tiny fragments
-                    # (avoids "agheasma" -> "agh e as ma")
                     if (len(pieces) <= 3
                             and all(len(p) >= 2 for p in pieces)
                             and sum(1 for p in pieces if len(p) >= 3) >= 1):
@@ -370,7 +379,6 @@ class TextNormalizer:
         if self.lowercase:
             text = text.lower()
 
-        text = self._apply_builtin_corrections(text)
         text = self._drop_noise_lines(text)
 
         # spell-check AFTER lowercase + digit fix so tokens are in canonical form
