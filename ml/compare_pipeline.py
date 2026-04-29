@@ -16,9 +16,14 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
+from multimodal import (
+    run_experiment as run_multimodal_experiment,
+    ExperimentConfig as MultimodalExperimentConfig,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(HERE)
+IMAGE_FOLDER = os.path.join(PROJECT_ROOT, "img")
 
 STAGE_DIRS = {
     "ocr": os.path.join(PROJECT_ROOT, "ocr", "tests"),
@@ -179,7 +184,7 @@ def train_and_evaluate(
     return accuracy, macro_f1
 
 
-def run_comparison(tsv_path: str, cfg: ExperimentConfig):
+def run_comparison(tsv_path: str, cfg: ExperimentConfig, run_multimodal: bool = False):
     print(f"Loading metadata from: {tsv_path}")
     metadata = pd.read_csv(tsv_path, sep="\t", dtype={"ID": str})
 
@@ -248,6 +253,7 @@ def run_comparison(tsv_path: str, cfg: ExperimentConfig):
 
             records.append(
                 {
+                    "model": "text_only",
                     "engine": engine,
                     "stage": stage,
                     "n_total": len(common_ids),
@@ -257,6 +263,37 @@ def run_comparison(tsv_path: str, cfg: ExperimentConfig):
                     "macro_f1": macro_f1,
                 }
             )
+
+        if run_multimodal:
+            print(f"\n  Running multimodal (CLIP+BERT) for engine: {engine}")
+            for stage in STAGES:
+                print(f"    Stage: {stage}")
+                multi_cfg = MultimodalExperimentConfig(
+                    tsv_file=tsv_path,
+                    text_folder=os.path.join(STAGE_DIRS[stage], engine),
+                    image_folder=IMAGE_FOLDER,
+                    label_column=cfg.label_column,
+                    max_len=cfg.max_len,
+                    batch_size=cfg.batch_size,
+                    epochs=cfg.epochs,
+                    seed=cfg.seed,
+                    test_size=cfg.test_size,
+                    verbose=True,
+                )
+                result = run_multimodal_experiment(multi_cfg)
+                print(f"    accuracy={result['accuracy']:.4f}, macro_f1={result['macro_f1']:.4f}")
+                records.append(
+                    {
+                        "model": "multimodal",
+                        "engine": engine,
+                        "stage": stage,
+                        "n_total": result["n_total"],
+                        "n_train": result["n_train"],
+                        "n_test": result["n_test"],
+                        "accuracy": result["accuracy"],
+                        "macro_f1": result["macro_f1"],
+                    }
+                )
 
     return pd.DataFrame.from_records(records)
 
@@ -296,6 +333,11 @@ def main():
         default=os.path.join(HERE, "comparison_results"),
         help="Where to save CSV/Markdown results.",
     )
+    parser.add_argument(
+        "--multimodal",
+        action="store_true",
+        help="Also run the multimodal (CLIP+BERT) model for each engine/stage.",
+    )
 
     args = parser.parse_args()
 
@@ -312,7 +354,7 @@ def main():
 
     set_seed(cfg.seed)
 
-    results_df = run_comparison(args.tsv, cfg)
+    results_df = run_comparison(args.tsv, cfg, run_multimodal=args.multimodal)
     if results_df.empty:
         print("No results were produced.")
         return
@@ -321,7 +363,7 @@ def main():
     csv_path = os.path.join(args.output_dir, "comparison_metrics.csv")
     md_path = os.path.join(args.output_dir, "comparison_metrics.md")
 
-    results_df = results_df.sort_values(["engine", "stage"]).reset_index(drop=True)
+    results_df = results_df.sort_values(["model", "engine", "stage"]).reset_index(drop=True)
     results_df.to_csv(csv_path, index=False)
 
     md_table = format_markdown_table(results_df)
