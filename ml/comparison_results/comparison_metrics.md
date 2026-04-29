@@ -1,8 +1,14 @@
-| engine | stage | n_total | n_train | n_test | accuracy | macro_f1 |
-| --- | --- | --- | --- | --- | --- | --- |
-| easyocr | diacritization | 459 | 367 | 92 | 0.3478 | 0.1807 |
-| easyocr | normalization | 459 | 367 | 92 | 0.4891 | 0.2941 |
-| easyocr | ocr | 459 | 367 | 92 | 0.4565 | 0.3636 |
-| tesseract | diacritization | 458 | 366 | 92 | 0.1087 | 0.1103 |
-| tesseract | normalization | 458 | 366 | 92 | 0.5326 | 0.3357 |
-| tesseract | ocr | 458 | 366 | 92 | 0.3152 | 0.1598 |
+| model | engine | stage | n_total | n_train | n_test | accuracy | macro_f1 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| multimodal | easyocr | diacritization | 459 | 367 | 92 | 0.7174 | 0.4482 |
+| multimodal | easyocr | normalization | 459 | 367 | 92 | 0.7283 | 0.4585 |
+| multimodal | easyocr | ocr | 461 | 368 | 93 | 0.6774 | 0.4537 |
+| multimodal | tesseract | diacritization | 458 | 366 | 92 | 0.7283 | 0.4638 |
+| multimodal | tesseract | normalization | 458 | 366 | 92 | 0.6848 | 0.4477 |
+| multimodal | tesseract | ocr | 460 | 368 | 92 | 0.6522 | 0.4402 |
+| text_only | easyocr | diacritization | 459 | 367 | 92 | 0.3804 | 0.2730 |
+| text_only | easyocr | normalization | 459 | 367 | 92 | 0.6087 | 0.3050 |
+| text_only | easyocr | ocr | 459 | 367 | 92 | 0.5217 | 0.3336 |
+| text_only | tesseract | diacritization | 458 | 366 | 92 | 0.5761 | 0.3866 |
+| text_only | tesseract | normalization | 458 | 366 | 92 | 0.5870 | 0.4257 |
+| text_only | tesseract | ocr | 458 | 366 | 92 | 0.6522 | 0.3312 |
