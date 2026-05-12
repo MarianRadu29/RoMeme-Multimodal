@@ -1,14 +1,50 @@
-| model | engine | stage | n_total | n_train | n_test | accuracy | macro_f1 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| multimodal | easyocr | diacritization | 459 | 367 | 92 | 0.7174 | 0.4482 |
-| multimodal | easyocr | normalization | 459 | 367 | 92 | 0.7283 | 0.4585 |
-| multimodal | easyocr | ocr | 461 | 368 | 93 | 0.6774 | 0.4537 |
-| multimodal | tesseract | diacritization | 458 | 366 | 92 | 0.7283 | 0.4638 |
-| multimodal | tesseract | normalization | 458 | 366 | 92 | 0.6848 | 0.4477 |
-| multimodal | tesseract | ocr | 460 | 368 | 92 | 0.6522 | 0.4402 |
-| text_only | easyocr | diacritization | 459 | 367 | 92 | 0.3804 | 0.2730 |
-| text_only | easyocr | normalization | 459 | 367 | 92 | 0.6087 | 0.3050 |
-| text_only | easyocr | ocr | 459 | 367 | 92 | 0.5217 | 0.3336 |
-| text_only | tesseract | diacritization | 458 | 366 | 92 | 0.5761 | 0.3866 |
-| text_only | tesseract | normalization | 458 | 366 | 92 | 0.5870 | 0.4257 |
-| text_only | tesseract | ocr | 458 | 366 | 92 | 0.6522 | 0.3312 |
+| label_column | model | engine | stage | n_total | n_train | n_test | accuracy | macro_f1 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Political | multimodal | easyocr | diacritization | 459 | 367 | 92 | 0.8587 | 0.8277 |
+| Political | multimodal | easyocr | normalization | 459 | 367 | 92 | 0.8804 | 0.8508 |
+| Political | multimodal | easyocr | ocr | 461 | 368 | 93 | 0.8602 | 0.8285 |
+| Political | multimodal | tesseract | diacritization | 458 | 366 | 92 | 0.8370 | 0.8094 |
+| Political | multimodal | tesseract | normalization | 458 | 366 | 92 | 0.8370 | 0.8055 |
+| Political | multimodal | tesseract | ocr | 460 | 368 | 92 | 0.8370 | 0.8094 |
+| Political | text_only | easyocr | diacritization | 459 | 367 | 92 | 0.7283 | 0.6523 |
+| Political | text_only | easyocr | normalization | 459 | 367 | 92 | 0.7500 | 0.6258 |
+| Political | text_only | easyocr | ocr | 459 | 367 | 92 | 0.7065 | 0.6934 |
+| Political | text_only | tesseract | diacritization | 458 | 366 | 92 | 0.7174 | 0.6785 |
+| Political | text_only | tesseract | normalization | 458 | 366 | 92 | 0.7391 | 0.6618 |
+| Political | text_only | tesseract | ocr | 458 | 366 | 92 | 0.6957 | 0.5357 |
+| Real_Fake | multimodal | easyocr | diacritization | 459 | 367 | 92 | 0.7065 | 0.4544 |
+| Real_Fake | multimodal | easyocr | normalization | 459 | 367 | 92 | 0.6957 | 0.4543 |
+| Real_Fake | multimodal | easyocr | ocr | 461 | 368 | 93 | 0.6989 | 0.4491 |
+| Real_Fake | multimodal | tesseract | diacritization | 458 | 366 | 92 | 0.6739 | 0.4382 |
+| Real_Fake | multimodal | tesseract | normalization | 458 | 366 | 92 | 0.7174 | 0.4645 |
+| Real_Fake | multimodal | tesseract | ocr | 460 | 368 | 92 | 0.6848 | 0.4376 |
+| Real_Fake | text_only | easyocr | diacritization | 459 | 367 | 92 | 0.6196 | 0.4173 |
+| Real_Fake | text_only | easyocr | normalization | 459 | 367 | 92 | 0.4891 | 0.3337 |
+| Real_Fake | text_only | easyocr | ocr | 459 | 367 | 92 | 0.5652 | 0.3502 |
+| Real_Fake | text_only | tesseract | diacritization | 458 | 366 | 92 | 0.6848 | 0.4251 |
+| Real_Fake | text_only | tesseract | normalization | 458 | 366 | 92 | 0.5435 | 0.3156 |
+| Real_Fake | text_only | tesseract | ocr | 458 | 366 | 92 | 0.5761 | 0.5262 |
+| Sentiment1 | multimodal | easyocr | diacritization | 459 | 367 | 92 | 0.4239 | 0.3728 |
+| Sentiment1 | multimodal | easyocr | normalization | 459 | 367 | 92 | 0.4783 | 0.4583 |
+| Sentiment1 | multimodal | easyocr | ocr | 461 | 368 | 93 | 0.4409 | 0.4312 |
+| Sentiment1 | multimodal | tesseract | diacritization | 458 | 366 | 92 | 0.4891 | 0.4497 |
+| Sentiment1 | multimodal | tesseract | normalization | 458 | 366 | 92 | 0.4348 | 0.4093 |
+| Sentiment1 | multimodal | tesseract | ocr | 460 | 368 | 92 | 0.4348 | 0.3922 |
+| Sentiment1 | text_only | easyocr | diacritization | 459 | 367 | 92 | 0.5217 | 0.4829 |
+| Sentiment1 | text_only | easyocr | normalization | 459 | 367 | 92 | 0.4565 | 0.3181 |
+| Sentiment1 | text_only | easyocr | ocr | 459 | 367 | 92 | 0.3913 | 0.3167 |
+| Sentiment1 | text_only | tesseract | diacritization | 458 | 366 | 92 | 0.2609 | 0.2452 |
+| Sentiment1 | text_only | tesseract | normalization | 458 | 366 | 92 | 0.4130 | 0.3298 |
+| Sentiment1 | text_only | tesseract | ocr | 458 | 366 | 92 | 0.4239 | 0.3632 |
+| Sentiment2 | multimodal | easyocr | diacritization | 459 | 367 | 92 | 0.1848 | 0.1142 |
+| Sentiment2 | multimodal | easyocr | normalization | 459 | 367 | 92 | 0.2609 | 0.1698 |
+| Sentiment2 | multimodal | easyocr | ocr | 461 | 368 | 93 | 0.2581 | 0.2073 |
+| Sentiment2 | multimodal | tesseract | diacritization | 458 | 366 | 92 | 0.2717 | 0.1787 |
+| Sentiment2 | multimodal | tesseract | normalization | 458 | 366 | 92 | 0.2391 | 0.1660 |
+| Sentiment2 | multimodal | tesseract | ocr | 460 | 368 | 92 | 0.2609 | 0.1750 |
+| Sentiment2 | text_only | easyocr | diacritization | 459 | 367 | 92 | 0.3370 | 0.2576 |
+| Sentiment2 | text_only | easyocr | normalization | 459 | 367 | 92 | 0.2717 | 0.1936 |
+| Sentiment2 | text_only | easyocr | ocr | 459 | 367 | 92 | 0.2826 | 0.2327 |
+| Sentiment2 | text_only | tesseract | diacritization | 458 | 366 | 92 | 0.2283 | 0.1340 |
+| Sentiment2 | text_only | tesseract | normalization | 458 | 366 | 92 | 0.3043 | 0.1834 |
+| Sentiment2 | text_only | tesseract | ocr | 458 | 366 | 92 | 0.2174 | 0.1500 |

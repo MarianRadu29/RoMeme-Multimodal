@@ -72,7 +72,6 @@ class ExperimentConfig:
     lr: float
     test_size: float
     seed: int
-    label_column: str
 
 
 def set_seed(seed: int):
@@ -184,15 +183,25 @@ def train_and_evaluate(
     return accuracy, macro_f1
 
 
-def run_comparison(tsv_path: str, cfg: ExperimentConfig, run_multimodal: bool = False):
+DEFAULT_LABEL_COLUMNS = ["Real_Fake", "Political", "Sentiment1", "Sentiment2"]
+
+
+def run_comparison(
+    tsv_path: str,
+    cfg: ExperimentConfig,
+    label_columns: list,
+    run_multimodal: bool = False,
+):
     print(f"Loading metadata from: {tsv_path}")
     metadata = pd.read_csv(tsv_path, sep="\t", dtype={"ID": str})
 
-    id_to_label = {
-        str(row["ID"]): row[cfg.label_column]
-        for _, row in metadata.iterrows()
-        if pd.notna(row[cfg.label_column])
-    }
+    id_to_labels = {}
+    for lc in label_columns:
+        id_to_labels[lc] = {
+            str(row["ID"]): row[lc]
+            for _, row in metadata.iterrows()
+            if pd.notna(row[lc])
+        }
 
     records = []
 
@@ -207,93 +216,101 @@ def run_comparison(tsv_path: str, cfg: ExperimentConfig, run_multimodal: bool = 
             stage_texts[stage] = texts_by_id
             print(f"  {stage:<14} -> {len(texts_by_id)} non-empty files")
 
-        common_ids = set.intersection(*[set(stage_texts[s].keys()) for s in STAGES])
-        common_ids = sorted([fid for fid in common_ids if fid in id_to_label])
+        all_text_ids = set.intersection(*[set(stage_texts[s].keys()) for s in STAGES])
 
-        if len(common_ids) < 10:
-            print("  [skip] Not enough common IDs for fair comparison.")
-            continue
+        for label_column in label_columns:
+            print(f"\n  --- Label: {label_column} ---")
+            id_to_label = id_to_labels[label_column]
 
-        labels_raw = [id_to_label[fid] for fid in common_ids]
-        label_encoder = LabelEncoder()
-        labels_encoded = label_encoder.fit_transform(labels_raw)
+            common_ids = sorted([fid for fid in all_text_ids if fid in id_to_label])
 
-        train_ids, test_ids, train_labels, test_labels = train_test_split(
-            common_ids,
-            labels_encoded,
-            test_size=cfg.test_size,
-            random_state=cfg.seed,
-            stratify=labels_encoded,
-        )
+            if len(common_ids) < 10:
+                print("  [skip] Not enough common IDs for fair comparison.")
+                continue
 
-        id_to_encoded_label = {
-            fid: int(lbl)
-            for fid, lbl in zip(common_ids, labels_encoded)
-        }
+            labels_raw = [id_to_label[fid] for fid in common_ids]
+            label_encoder = LabelEncoder()
+            labels_encoded = label_encoder.fit_transform(labels_raw)
+            print(f"  Classes ({len(label_encoder.classes_)}): {list(label_encoder.classes_)}")
 
-        for stage in STAGES:
-            print(f"\n  Running stage: {stage}")
-            texts_map = stage_texts[stage]
-
-            stage_train_texts = [texts_map[fid] for fid in train_ids]
-            stage_test_texts = [texts_map[fid] for fid in test_ids]
-            stage_train_labels = [id_to_encoded_label[fid] for fid in train_ids]
-            stage_test_labels = [id_to_encoded_label[fid] for fid in test_ids]
-
-            acc, macro_f1 = train_and_evaluate(
-                stage_train_texts,
-                stage_train_labels,
-                stage_test_texts,
-                stage_test_labels,
-                num_labels=len(label_encoder.classes_),
-                cfg=cfg,
+            train_ids, test_ids, train_labels, test_labels = train_test_split(
+                common_ids,
+                labels_encoded,
+                test_size=cfg.test_size,
+                random_state=cfg.seed,
+                stratify=labels_encoded,
             )
 
-            print(f"    accuracy={acc:.4f}, macro_f1={macro_f1:.4f}")
+            id_to_encoded_label = {
+                fid: int(lbl)
+                for fid, lbl in zip(common_ids, labels_encoded)
+            }
 
-            records.append(
-                {
-                    "model": "text_only",
-                    "engine": engine,
-                    "stage": stage,
-                    "n_total": len(common_ids),
-                    "n_train": len(train_ids),
-                    "n_test": len(test_ids),
-                    "accuracy": acc,
-                    "macro_f1": macro_f1,
-                }
-            )
-
-        if run_multimodal:
-            print(f"\n  Running multimodal (CLIP+BERT) for engine: {engine}")
             for stage in STAGES:
-                print(f"    Stage: {stage}")
-                multi_cfg = MultimodalExperimentConfig(
-                    tsv_file=tsv_path,
-                    text_folder=os.path.join(STAGE_DIRS[stage], engine),
-                    image_folder=IMAGE_FOLDER,
-                    label_column=cfg.label_column,
-                    max_len=cfg.max_len,
-                    batch_size=cfg.batch_size,
-                    epochs=cfg.epochs,
-                    seed=cfg.seed,
-                    test_size=cfg.test_size,
-                    verbose=True,
+                print(f"\n    Running stage: {stage}")
+                texts_map = stage_texts[stage]
+
+                stage_train_texts = [texts_map[fid] for fid in train_ids]
+                stage_test_texts = [texts_map[fid] for fid in test_ids]
+                stage_train_labels = [id_to_encoded_label[fid] for fid in train_ids]
+                stage_test_labels = [id_to_encoded_label[fid] for fid in test_ids]
+
+                acc, macro_f1 = train_and_evaluate(
+                    stage_train_texts,
+                    stage_train_labels,
+                    stage_test_texts,
+                    stage_test_labels,
+                    num_labels=len(label_encoder.classes_),
+                    cfg=cfg,
                 )
-                result = run_multimodal_experiment(multi_cfg)
-                print(f"    accuracy={result['accuracy']:.4f}, macro_f1={result['macro_f1']:.4f}")
+
+                print(f"      accuracy={acc:.4f}, macro_f1={macro_f1:.4f}")
+
                 records.append(
                     {
-                        "model": "multimodal",
+                        "label_column": label_column,
+                        "model": "text_only",
                         "engine": engine,
                         "stage": stage,
-                        "n_total": result["n_total"],
-                        "n_train": result["n_train"],
-                        "n_test": result["n_test"],
-                        "accuracy": result["accuracy"],
-                        "macro_f1": result["macro_f1"],
+                        "n_total": len(common_ids),
+                        "n_train": len(train_ids),
+                        "n_test": len(test_ids),
+                        "accuracy": acc,
+                        "macro_f1": macro_f1,
                     }
                 )
+
+            if run_multimodal:
+                print(f"\n    Running multimodal (CLIP+BERT), label: {label_column}, engine: {engine}")
+                for stage in STAGES:
+                    print(f"      Stage: {stage}")
+                    multi_cfg = MultimodalExperimentConfig(
+                        tsv_file=tsv_path,
+                        text_folder=os.path.join(STAGE_DIRS[stage], engine),
+                        image_folder=IMAGE_FOLDER,
+                        label_column=label_column,
+                        max_len=cfg.max_len,
+                        batch_size=cfg.batch_size,
+                        epochs=cfg.epochs,
+                        seed=cfg.seed,
+                        test_size=cfg.test_size,
+                        verbose=True,
+                    )
+                    result = run_multimodal_experiment(multi_cfg)
+                    print(f"      accuracy={result['accuracy']:.4f}, macro_f1={result['macro_f1']:.4f}")
+                    records.append(
+                        {
+                            "label_column": label_column,
+                            "model": "multimodal",
+                            "engine": engine,
+                            "stage": stage,
+                            "n_total": result["n_total"],
+                            "n_train": result["n_train"],
+                            "n_test": result["n_test"],
+                            "accuracy": result["accuracy"],
+                            "macro_f1": result["macro_f1"],
+                        }
+                    )
 
     return pd.DataFrame.from_records(records)
 
@@ -320,7 +337,13 @@ def main():
         description="Compare OCR vs normalization vs diacritization for text classification."
     )
     parser.add_argument("--tsv", default=os.path.join(PROJECT_ROOT, "metadata.tsv"))
-    parser.add_argument("--label-column", default="Real_Fake")
+    parser.add_argument(
+        "--label-columns",
+        nargs="+",
+        default=DEFAULT_LABEL_COLUMNS,
+        metavar="COL",
+        help="One or more metadata columns to use as classification targets.",
+    )
     parser.add_argument("--model-name", default="bert-base-multilingual-cased")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=16)
@@ -349,12 +372,13 @@ def main():
         lr=args.lr,
         test_size=args.test_size,
         seed=args.seed,
-        label_column=args.label_column,
     )
 
     set_seed(cfg.seed)
 
-    results_df = run_comparison(args.tsv, cfg, run_multimodal=args.multimodal)
+    results_df = run_comparison(
+        args.tsv, cfg, label_columns=args.label_columns, run_multimodal=args.multimodal
+    )
     if results_df.empty:
         print("No results were produced.")
         return
@@ -363,7 +387,7 @@ def main():
     csv_path = os.path.join(args.output_dir, "comparison_metrics.csv")
     md_path = os.path.join(args.output_dir, "comparison_metrics.md")
 
-    results_df = results_df.sort_values(["model", "engine", "stage"]).reset_index(drop=True)
+    results_df = results_df.sort_values(["label_column", "model", "engine", "stage"]).reset_index(drop=True)
     results_df.to_csv(csv_path, index=False)
 
     md_table = format_markdown_table(results_df)
